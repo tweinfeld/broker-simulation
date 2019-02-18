@@ -15,7 +15,6 @@ module.exports = function({
 }){
     return {
         send({ to_phone, message, reference = {} }){
-            console.log(message);
             return kefir
                 .fromNodeCallback((cb)=> request({
                     method: "POST",

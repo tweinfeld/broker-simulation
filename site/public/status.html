@@ -7,7 +7,7 @@
     <script src="https://cdn.jsdelivr.net/npm/kefir@3.8.5/dist/kefir.min.js"></script>
     <script src="https://unpkg.com/react@16/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@16/umd/react-dom.development.js" crossorigin></script>
-    <link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans" rel="stylesheet">
     <link rel="stylesheet" href="app.css"/>
 </head>
 <body>
@@ -17,42 +17,45 @@
         const
             SECOND = 1000,
             TEST_ACCOUNT = "6d2cb5be-177b-41e3-9f55-d7ee2a056511",
+            EVENT_SEND_MESSAGE = "send_message",
             EVENT_OPEN_VALIDATION = "open_account_validation",
             EVENT_REQUEST_VALIDATION = "request_account_validation",
-            EVENT_SEND_MESSAGE = "send_message",
-            TRANSACTION_POLLING_TIME = 2 * SECOND;
+            TRANSACTION_POLLING_TIME = 5 * SECOND;
 
         const
             bus = Kefir.pool(),
             sendUiEvent = (type, payload = {})=> bus.plug(Kefir.constant({ type, payload })),
-            filterEvent = (type)=> (stream)=> stream.filter(_.matches({ type })).map(_.property('payload'));
+            filterEvent = (type)=> (stream)=> stream.filter(_.matches({ type })).map(_.property('payload')),
+            accountId = _.last((window.location.search || "?").split('').slice(1).join('').match(/account_id=([^=]+)/) || [null, TEST_ACCOUNT]);
 
         const
             accountInformationProperty = Kefir
-                .fromPromise(fetch(`/api/account/${TEST_ACCOUNT}`).then((res)=> res.json()))
+                .fromPromise(fetch(`/api/account/${accountId}`).then((res)=> res.json()))
                 .toProperty();
 
-        const
-            transactionProperty = Kefir
-                .repeat(
-                    ()=> Kefir.concat([
-                        Kefir.fromPromise(fetch(`/api/account/${TEST_ACCOUNT}/transaction`).then((res)=> res.json())),
-                        Kefir.later(TRANSACTION_POLLING_TIME).ignoreValues()
-                    ])
-                )
-                .toProperty(()=> ({ transaction: [], balance: null }));
+        const accountValidProperty = accountInformationProperty
+            .map(_.property('valid'))
+            .skipDuplicates();
 
-        const
-            accountValidationScreenProperty = bus
-                .thru(filterEvent(EVENT_OPEN_VALIDATION))
-                .map(_.constant(true))
-                .toProperty(_.constant(false));
+        bus.plug(accountValidProperty.filter(_.negate(Boolean)).map(()=>({ type: EVENT_OPEN_VALIDATION })));
+
+        const transactionProperty = accountValidProperty
+            .flatMapLatest((valid)=> {
+                return valid
+                    ? Kefir
+                        .repeat(()=> Kefir.concat([
+                            Kefir.fromPromise(fetch(`/api/account/${accountId}/transaction`).then((res)=> res.json())),
+                            Kefir.later(TRANSACTION_POLLING_TIME).ignoreValues()
+                        ]))
+                    : Kefir.never()
+            })
+            .toProperty(()=> ({ transaction: [], balance: null }));
 
         Kefir.merge([
             bus
                 .thru(filterEvent(EVENT_SEND_MESSAGE))
                 .flatMap((message)=> {
-                    return Kefir.fromPromise(fetch(`/api/account/${TEST_ACCOUNT}/send_message`, {
+                    return Kefir.fromPromise(fetch(`/api/account/${accountId}/send_message`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(message)
@@ -60,32 +63,31 @@
                 }),
             bus
                 .thru(filterEvent(EVENT_OPEN_VALIDATION))
-                .flatMap(()=> Kefir.fromPromise(fetch(`/api/account/${TEST_ACCOUNT}/validate`, { method: "POST" })
+                .flatMap(()=> Kefir.fromPromise(fetch(`/api/account/${accountId}/validate`, { method: "POST" })
                     .then((res)=> res.status))),
             bus
                 .thru(filterEvent(EVENT_REQUEST_VALIDATION))
-                .flatMap((code)=> Kefir.fromPromise(fetch(`/api/account/${TEST_ACCOUNT}/validate_check`, {
+                .flatMap((code)=> Kefir.fromPromise(fetch(`/api/account/${accountId}/validate_check`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ code })
                 }).then((res)=> res.status)))
             ])
-            .log('Log >');
+            .log();
 
         Kefir
             .combine(
                 [
                     accountInformationProperty,
-                    accountValidationScreenProperty,
                     transactionProperty
                 ],
-                (accountInformation, accountValidationScreen, transaction)=> ({ accountInformation, accountValidationScreen, transaction })
+                (accountInformation, transaction)=> ({ accountInformation, transaction })
             )
             .onValue(
                 (function(mainEl){
 
                     const
-                        [section, div, span, h1, h2, table, thead, tbody, tr, th, td, button, input, label, textarea, ul, li] = ["section", "div", "span", "h1", "h2", "table", "thead", "tbody", "tr", "th", "td", "button", "input", "label", "textarea", "ul", "li"].map((tagName)=> React.createElement.bind(null, tagName)),
+                        [section, div, span, p, h1, h2, table, thead, tbody, tr, th, td, button, input, label, textarea, ul, li] = ["section", "div", "span", "p", "h1", "h2", "table", "thead", "tbody", "tr", "th", "td", "button", "input", "label", "textarea", "ul", "li"].map((tagName)=> React.createElement.bind(null, tagName)),
                         formatDate = (ts, includeHour = true)=> {
                             const
                                 dt = new Date(ts),
@@ -103,15 +105,18 @@
                         }
 
                         static defaultProps(){
-                            return { onChange: _.noop };
+                            return { onChange: _.noop, onResend: _.noop };
                         }
 
                         render(){
                             return section({}, [],
+                                h1({}, [], 'Account Verification'),
+                                p({}, `We've sent you a verification code to ${this.props["owner_phone"]}`),
                                 label({}, [],
-                                    `Validation code`,
+                                    `Validation code: `,
                                     input({ type: "text", onChange: (e)=> this.setState({ value: e.target.value }), value: this.state["value"] }),
-                                    button({ onClick: ()=> this.props["onChange"](this.state["value"]) }, [], 'Send')
+                                    button({ onClick: ()=> this.props["onChange"](this.state["value"]) }, [], 'Verify'),
+                                    button({ onClick: ()=> this.props["onResend"](this.state["value"]) }, [], 'Resend code')
                                 ));
                         }
                     };
@@ -141,53 +146,74 @@
                         }
                     };
 
+                    const validLayout = ({ owner_full_name, valid, owner_phone, transaction, balance })=> [
+                        //accountValidationScreen && React.createElement(ValidationSectionComponent, { onChange: sendUiEvent.bind(null, EVENT_REQUEST_VALIDATION) }),
+                        section({ className: "information" }, [],
+                            h1({}, [], 'Account Information'),
+                            ul({}, [],
+                                li({}, [],
+                                    "Full name: ", owner_full_name
+                                ),
+                                li({}, [],
+                                    "Phone: ", owner_phone
+                                ),
+                                li({ className: valid ? "verified" : null }, [],
+                                    "Status: ",
+                                    ...valid
+                                        ? ["Verified"]
+                                        : ["Unverified", button({ onClick: sendUiEvent.bind(null, EVENT_OPEN_VALIDATION) }, [], 'Verify this Account')]
+                                )
+                            )
+                        ),
+                        section({ className: "transaction" }, [],
+                            h1({}, [], 'Last Transactions'),
+                            h2({}, [], 'Balance: ', balance),
+                            table({}, [],
+                                thead({}, [],
+                                    tr({}, [],
+                                        th({}, [], 'Date'),
+                                        th({}, [], 'Amount'),
+                                        th({}, [], 'Description')
+                                    )
+                                ),
+                                tbody(
+                                    {},
+                                    _(transaction).orderBy(["ts"], ["asc"]).map(({ ts, amount, reference: { type: transactionType } }, index)=> tr({ key: index }, [],
+                                        td({}, [], formatDate(ts)),
+                                        td({}, [], amount),
+                                        td({}, [], { "sms": "Message Sent", "registration_deposit": "Registration Deposit" }[transactionType] || "N/A")
+                                    )).value()
+                                )
+                            )
+                        ),
+                        React.createElement(SendSMSComponent, { onSend: sendUiEvent.bind(null, 'send_message') })
+                    ].filter(Boolean);
+
+                    const invalidLayout = ({ owner_full_name, owner_phone })=> [
+                        h1({}, [], `Hi ${_.flow(_.first, _.capitalize)(owner_full_name.match(/[^\s]+/))},`),
+                        p({}, [], `It looks like you haven't activated your account yet.`),
+                        React.createElement(ValidationSectionComponent, {
+                            owner_phone,
+                            onChange: sendUiEvent.bind(null, EVENT_REQUEST_VALIDATION),
+                            onResend: sendUiEvent.bind(null, EVENT_OPEN_VALIDATION)
+                        })
+                    ];
+
                     return ({
                         accountInformation: { owner_full_name, owner_phone, valid },
-                        accountValidationScreen,
+                        //accountValidationScreen,
                         transaction: { transaction, balance }
-                    })=> ReactDOM
-                        .render(React.createElement(React.Fragment, {}, [], ...[
-                            accountValidationScreen && React.createElement(ValidationSectionComponent, { onChange: sendUiEvent.bind(null, EVENT_REQUEST_VALIDATION) }),
-                            section({ className: "information" }, [],
-                                h1({}, [], 'Account Information'),
-                                ul({}, [],
-                                    li({}, [],
-                                        "Full name: ", owner_full_name
-                                    ),
-                                    li({}, [],
-                                        "Phone: ", owner_phone
-                                    ),
-                                    li({ className: valid ? "verified" : null }, [],
-                                        "Status: ",
-                                        ...valid
-                                            ? ["Verified"]
-                                            : ["Unverified", button({ onClick: sendUiEvent.bind(null, EVENT_OPEN_VALIDATION) }, [], 'Verify this Account')]
-                                    )
-                                )
-                            ),
-                            section({ className: "transaction" }, [],
-                                h1({}, [], 'Last Transactions'),
-                                h2({}, [], 'Balance: ', balance),
-                                table({}, [],
-                                    thead({}, [],
-                                        tr({}, [],
-                                            th({}, [], 'Date'),
-                                            th({}, [], 'Amount'),
-                                            th({}, [], 'Description')
-                                        )
-                                    ),
-                                    tbody(
-                                        {},
-                                        _(transaction).orderBy(["ts"], ["asc"]).map(({ ts, amount, reference: { type: transactionType } }, index)=> tr({ key: index }, [],
-                                            td({}, [], formatDate(ts)),
-                                            td({}, [], amount),
-                                            td({}, [], { "sms": "Message Sent", "registration_deposit": "Registration Deposit" }[transactionType] || "N/A")
-                                        )).value()
-                                    )
-                                )
-                            ),
-                            React.createElement(SendSMSComponent, { onSend: sendUiEvent.bind(null, 'send_message') })
-                        ].filter(Boolean)), mainEl)
+                    })=> {
+                        ReactDOM
+                            .render(React.createElement(
+                                React.Fragment,
+                                {},
+                                [],
+                                ...valid
+                                    ? validLayout({ owner_full_name, owner_phone, valid, transaction, balance })
+                                    : invalidLayout({ owner_full_name, owner_phone })
+                            ), mainEl);
+                    };
                 })(document.querySelector('main'))
             );
 
