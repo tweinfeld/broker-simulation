@@ -4,7 +4,7 @@ const
     kefir = require('kefir'),
     level = require('level'),
     CustomerSite = require('./site'),
-    accountRegistryFactory = require('./account_registry'),
+    accountRegistryFactory = require('./account'),
     messagingServiceFactory = require('./messaging');
 
 const
