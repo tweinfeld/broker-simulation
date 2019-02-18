@@ -1,0 +1,71 @@
+
+@theme-color-1: #503047;
+@theme-color-2: #ffffff;
+@theme-color-3: #d0e3c4;
+@theme-color-4: #adc698;
+@theme-color-5: #c05746;
+
+body {
+  background-color: #fafafa;
+  font-family: 'Roboto', sans-serif;
+  > main {
+
+    > section {
+      border: solid 1px @theme-color-1;
+      border-radius: 5px;
+      margin: 1rem;
+      padding: 3rem 1rem 1rem 1rem;
+      position: relative;
+
+      > h1, > h2 {
+        font-weight: normal;
+        font-size: 1rem;
+        margin: 0;
+        padding: 0;
+      }
+
+      > h1:first-child {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        //font-weight: bold;
+        padding: 0.5rem 1rem;
+        background-color: @theme-color-1;
+        color: @theme-color-2;
+        border-radius: 1px;
+        box-sizing: border-box;
+      }
+
+      &.transaction {
+        > table {
+          border-collapse: collapse;
+          tr {
+            > td, th {
+              border: solid 1px @theme-color-1;
+              text-align: center;
+            }
+          }
+        }
+      }
+
+      &.send {
+
+        /*> div {
+          width: 100%;
+          position: relative;
+          display: flex;
+          justify-items: stretch;
+          align-items: stretch;
+          > textarea {
+            flex: 2 0 0;
+            resize: none;
+          }
+        }*/
+
+      }
+
+    }
+  }
+
+}
