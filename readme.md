@@ -6,7 +6,7 @@ In order to run this project you need to have an account at https://www.twilio.c
 
   * Install the project -> `npm i`
   * Build the project -> `npm run build`
-  * Run the project `npm run start [Twillio Account ID] [Twillio Secret] [Twillio Number]`
+  * Run the project -> `npm run start [Twillio Account ID] [Twillio Secret] [Twillio Number]`
   * Browse to `http://localhost:8080` and register using your name and phone number
   * Enjoy!
   
