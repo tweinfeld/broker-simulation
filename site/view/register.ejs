@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <%- include('header', { title: "Registration" }); %>
+</head>
+<body class="registration">
+    <form method="post" enctype="application/x-www-form-urlencoded">
+        <h1>Register</h1>
+        <hr/>
+        <div><label>Full Name:</label><input name="owner_full_name" type="text"/></div>
+        <div><label>Phone Number:</label><input name="owner_phone" type="text"/></div>
+        <hr/>
+        <input type="submit" name="submit"/>
+    </form>
+    <div class="errors"><%=error%></div>
+</body>
+</html>

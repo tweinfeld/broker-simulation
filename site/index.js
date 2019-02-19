@@ -77,24 +77,6 @@ module.exports = class extends EventEmitter {
                 }, next);
         });
 
-        app.post('/api/account', (req, res, next) => {
-
-            let {owner_full_name, owner_phone} = req.body;
-
-            assert(validateFullName(owner_full_name), `Account owner's full name is invalid`);
-            assert(validatePhoneNumber(owner_phone), `Account owner's phone number is invalid`);
-
-            kefir
-                .fromPromise(sendRpc('register_new_account', {owner_full_name, owner_phone}))
-                .flatMap(({ account_id }) => {
-                    return kefir
-                        .fromNodeCallback(_.partial(jwt.sign, { account_id }, tokenSignatureSecret, { expiresIn: DEFAULT_TOKEN_EXPIRATION }))
-                        .map((token) => ({ account_id, token }));
-                })
-                .onValue(res.status(200).json.bind(res))
-                .onError(next);
-        });
-
         app.get('/api/account/transaction', requireValidatedAccount, (req, res, next)=> {
             let account = _.get(req, 'account');
             kefir
@@ -135,11 +117,34 @@ module.exports = class extends EventEmitter {
 
         app.use((err, req, res, next) => res.status(500).json({ description: err.message }));
 
-        /*app.get('/register.html', (req, res)=>{
-            res.render('register.ejs');
-        });*/
+        app.get('/', (req, res)=> {
+            res.render('register.ejs', { error: null });
+        });
+
+        app.post('/', bodyParser.urlencoded({ extended: false }), (req, res)=> {
+
+            let {owner_full_name, owner_phone} = req.body;
+
+            kefir
+                .fromNodeCallback((cb)=> {
+                    let validation = _.attempt(()=> {
+                        assert(validateFullName(owner_full_name), `Account owner's full name is invalid`);
+                        assert(validatePhoneNumber(owner_phone), `Account owner's phone number is invalid`);
+                    });
+
+                    cb(_.isError(validation) ? validation.message : null);
+                })
+                .flatMap(()=> {
+                    return kefir
+                        .fromPromise(sendRpc('register_new_account', { owner_full_name, owner_phone }))
+                        .flatMap(({ account_id }) => kefir.fromNodeCallback(_.partial(jwt.sign, { account_id }, tokenSignatureSecret, { expiresIn: DEFAULT_TOKEN_EXPIRATION })))
+                })
+                .onError((error)=> res.render('register.ejs', { error }))
+                .onValue((token)=> res.redirect(`/status.html?token=${token}`));
+
+        });
 
         app.use(express.static(path.join(__dirname, DEFAULT_PUBLIC_FOLDER)));
         app.listen(8080);
     }
-}
+};
