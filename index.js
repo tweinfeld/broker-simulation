@@ -10,13 +10,15 @@ const
 const
     SMS_PRICE = -2,
     INITIAL_ACCOUNT_FUND = 30,
-    TWILLIO_SECRET = "464f52c18435010c77f5de975b44a283",
-    TWILLIO_ACCOUNT_ID = "ACa4f85bd587cd3e64d75784c956ad05ec";
+    TWILLIO_SECRET = "",
+    TWILLIO_ACCOUNT_ID = "",
+    TWILLIO_SENDER = "+15005550006";
 
 const
+    [ confTwillioAccountId = TWILLIO_ACCOUNT_ID, confTwillioSecret = TWILLIO_SECRET, confTwillioSender = TWILLIO_SENDER] = process.argv.slice(2, 5),
     web = new CustomerSite(),
     registry = accountRegistryFactory({}),
-    messenger = messagingServiceFactory({ twillio_secret: TWILLIO_SECRET, twillio_account_id: TWILLIO_ACCOUNT_ID });
+    messenger = messagingServiceFactory({ twillio_secret: confTwillioSecret, twillio_account_id: confTwillioAccountId, sender_phone: confTwillioSender });
 
 web.on('register_new_account', ({ callback, payload: accountInfo })=> {
     kefir

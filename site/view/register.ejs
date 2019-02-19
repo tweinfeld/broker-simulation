@@ -12,6 +12,6 @@
         <hr/>
         <input type="submit" name="submit"/>
     </form>
-    <div class="errors"><%=error%></div>
+    <% if (error) {%><div class="errors"><%=error%></div><% } %>
 </body>
 </html>
