@@ -1,10 +1,11 @@
 {
-  "name": "kin_eval",
+  "name": "kin-gateway",
   "version": "1.0.0",
-  "description": "Kin Evaluation Challenge",
+  "description": "Message Gateway Simulation",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "Tal Weinfeld",

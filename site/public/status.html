@@ -30,8 +30,19 @@
 
         const
             accountInformationProperty = Kefir
-                .fromPromise(fetch(`/api/account/${accountId}`).then((res)=> res.json()))
+                .concat([
+                    Kefir.constant(),
+                    bus
+                        .thru(filterEvent(EVENT_REQUEST_VALIDATION))
+                        .flatMap((code)=> Kefir.fromPromise(fetch(`/api/account/${accountId}/validate_check`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ code })
+                        }).then((res)=> res.status)))
+                ])
+                .flatMap(()=> Kefir.fromPromise(fetch(`/api/account/${accountId}`).then((res)=> res.json())))
                 .toProperty();
+
 
         const accountValidProperty = accountInformationProperty
             .map(_.property('valid'))
@@ -64,14 +75,8 @@
             bus
                 .thru(filterEvent(EVENT_OPEN_VALIDATION))
                 .flatMap(()=> Kefir.fromPromise(fetch(`/api/account/${accountId}/validate`, { method: "POST" })
-                    .then((res)=> res.status))),
-            bus
-                .thru(filterEvent(EVENT_REQUEST_VALIDATION))
-                .flatMap((code)=> Kefir.fromPromise(fetch(`/api/account/${accountId}/validate_check`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ code })
-                }).then((res)=> res.status)))
+                    .then((res)=> res.status)))
+
             ])
             .log();
 
@@ -98,26 +103,67 @@
                             ]).join(' ');
                         };
 
-                    const ValidationSectionComponent = class extends React.Component {
-                        constructor(props) {
+                    const KeypadComponent = class extends React.Component {
+
+                        static defaultProps = {
+                            size: 4,
+                            locked: true,
+                            onSubmit: _.noop,
+                            onChange: _.noop,
+                            initialValue: ""
+                        };
+
+                        constructor(props){
                             super(props);
-                            this.state = { value: "" };
+
+                            const { size, initialValue } = props;
+
+                            this.focuses = [];
+                            this.state = { digits: initialValue.split('').concat(_.range(size).map(()=> '')).slice(0, size) };
+
+                            Kefir
+                                .stream(({ emit })=> {
+                                    this.setDigitState = (index, value)=> {
+                                        this.setState((currentState)=> {
+                                            return {
+                                                digits: (function(digitsState){
+                                                    digitsState[index] = value.substr(0, 1);
+                                                    return digitsState;
+                                                })(currentState.digits.slice(0))
+                                            };
+                                        }, ()=> {
+                                            this.props["onChange"](this.getValue());
+                                            emit(index);
+                                        });
+                                        value && (this.focuses[index + 1] || _.noop)();
+                                    };
+                                })
+                                .diff((prev, cur)=> cur === prev + 1 ? 1 : 0)
+                                .scan((ac, cur)=> cur ? ac + 1 : 0)
+                                .filter((sequential)=> sequential === this.state.digits.length - 1)
+                                .takeUntilBy(Kefir.fromCallback((cb)=> this.componentWillUnmount = cb))
+                                .onValue(()=> this.props["onSubmit"](this.getValue()));
                         }
 
-                        static defaultProps(){
-                            return { onChange: _.noop, onResend: _.noop };
+                        componentDidMount(){
+                            (this.focuses[0] || _.noop)();
+                        }
+
+                        getValue(){
+                            return this.state.digits.map((v)=> v === "" ? " " : v).join('');
                         }
 
                         render(){
-                            return section({}, [],
-                                h1({}, [], 'Account Verification'),
-                                p({}, `We've sent you a verification code to ${this.props["owner_phone"]}`),
-                                label({}, [],
-                                    `Validation code: `,
-                                    input({ type: "text", onChange: (e)=> this.setState({ value: e.target.value }), value: this.state["value"] }),
-                                    button({ onClick: ()=> this.props["onChange"](this.state["value"]) }, [], 'Verify'),
-                                    button({ onClick: ()=> this.props["onResend"](this.state["value"]) }, [], 'Resend code')
-                                ));
+                            return React.createElement('div', { className: ["keypad", this.props["locked"] && "locked"].filter(Boolean).join(' ') }, [],
+                                ...this.state.digits.map((value, index)=> React.createElement('input', {
+                                    value,
+                                    type: "number",
+                                    readOnly: this.props["locked"],
+                                    onChange: (e)=> this.setDigitState(index, e.target.value),
+                                    ref: (el)=> this.focuses[index] = ()=> el.focus()
+                                })),
+                                React.createElement('button', { className: "verify", ref: (el)=> this.focuses[this.props["size"]] = ()=> el.focus() ,onClick: ()=> this.props["onSubmit"](this.getValue()) }, [], 'Verify')
+                            );
                         }
                     };
 
@@ -190,18 +236,16 @@
                     ].filter(Boolean);
 
                     const invalidLayout = ({ owner_full_name, owner_phone })=> [
-                        h1({}, [], `Hi ${_.flow(_.first, _.capitalize)(owner_full_name.match(/[^\s]+/))},`),
-                        p({}, [], `It looks like you haven't activated your account yet.`),
-                        React.createElement(ValidationSectionComponent, {
-                            owner_phone,
-                            onChange: sendUiEvent.bind(null, EVENT_REQUEST_VALIDATION),
-                            onResend: sendUiEvent.bind(null, EVENT_OPEN_VALIDATION)
-                        })
+                        section({ className: "validate" }, [],
+                            h1({}, [], 'Account Verification'),
+                            p({}, [], `Welcome ${_.flow(_.first, _.capitalize)(owner_full_name.match(/[^\s]+/))}!\n\nIt looks like you haven't activated your account yet.\nWe've sent you a verification code to your phone number (${owner_phone}), please enter it below.`),
+                            React.createElement(KeypadComponent, { locked: false, size: 4, onSubmit: sendUiEvent.bind(null, EVENT_REQUEST_VALIDATION) }),
+                            button({ className: "resend", onClick: sendUiEvent.bind(null, EVENT_OPEN_VALIDATION) }, [], 'Resend code')
+                        )
                     ];
 
                     return ({
                         accountInformation: { owner_full_name, owner_phone, valid },
-                        //accountValidationScreen,
                         transaction: { transaction, balance }
                     })=> {
                         ReactDOM
