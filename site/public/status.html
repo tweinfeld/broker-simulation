@@ -26,7 +26,10 @@
             bus = Kefir.pool(),
             sendUiEvent = (type, payload = {})=> bus.plug(Kefir.constant({ type, payload })),
             filterEvent = (type)=> (stream)=> stream.filter(_.matches({ type })).map(_.property('payload')),
-            accountId = _.last((window.location.search || "?").split('').slice(1).join('').match(/account_id=([^=]+)/) || [null, TEST_ACCOUNT]);
+            authorizeRequest = (function(token = ""){
+                return (req = {})=> _.merge(req, { "headers": { "Authorization": `Bearer ${token}` } });
+            })(_.last((window.location.search || "?").split('').slice(1).join('').match(/token=([^=]+)/)));
+
 
         const
             accountInformationProperty = Kefir
@@ -34,13 +37,13 @@
                     Kefir.constant(),
                     bus
                         .thru(filterEvent(EVENT_REQUEST_VALIDATION))
-                        .flatMap((code)=> Kefir.fromPromise(fetch(`/api/account/${accountId}/validate_check`, {
+                        .flatMap((code)=> Kefir.fromPromise(fetch(`/api/account/validate_check`, authorizeRequest({
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ code })
-                        }).then((res)=> res.status)))
+                        })).then((res)=> res.status)))
                 ])
-                .flatMap(()=> Kefir.fromPromise(fetch(`/api/account/${accountId}`).then((res)=> res.json())))
+                .flatMap(()=> Kefir.fromPromise(fetch(`/api/account`, authorizeRequest()).then((res)=> res.json())))
                 .toProperty();
 
 
@@ -55,7 +58,7 @@
                 return valid
                     ? Kefir
                         .repeat(()=> Kefir.concat([
-                            Kefir.fromPromise(fetch(`/api/account/${accountId}/transaction`).then((res)=> res.json())),
+                            Kefir.fromPromise(fetch(`/api/account/transaction`, authorizeRequest()).then((res)=> res.json())),
                             Kefir.later(TRANSACTION_POLLING_TIME).ignoreValues()
                         ]))
                     : Kefir.never()
@@ -66,15 +69,15 @@
             bus
                 .thru(filterEvent(EVENT_SEND_MESSAGE))
                 .flatMap((message)=> {
-                    return Kefir.fromPromise(fetch(`/api/account/${accountId}/send_message`, {
+                    return Kefir.fromPromise(fetch(`/api/account/send_message`, authorizeRequest({
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(message)
-                    }).then((res)=> res.status))
+                    })).then((res)=> res.status))
                 }),
             bus
                 .thru(filterEvent(EVENT_OPEN_VALIDATION))
-                .flatMap(()=> Kefir.fromPromise(fetch(`/api/account/${accountId}/validate`, { method: "POST" })
+                .flatMap(()=> Kefir.fromPromise(fetch(`/api/account/validate`, authorizeRequest({ method: "POST" }))
                     .then((res)=> res.status)))
 
             ])

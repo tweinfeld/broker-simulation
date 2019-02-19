@@ -3,6 +3,7 @@ const
     jwt = require('jsonwebtoken'),
     path = require('path'),
     uuid = require('uuid/v4'),
+    cors = require('cors'),
     level = require('level'),
     kefir = require('kefir'),
     assert = require('assert'),
@@ -54,8 +55,18 @@ module.exports = class extends EventEmitter {
             sendRpc = sendRpcFactory(this);
 
         app.set('views', path.join(__dirname, 'view'));
-
+        app.use('/api', cors());
         app.use('/api', bodyParser.json());
+        app.use('/api', (req, res, next)=> {
+            let token = _.attempt(()=> _.flow(_.property('headers.authorization'), (txt = '')=> txt.match(/Bearer\s*([^\s]+)/i), _.property(1), _.partial(jwt.verify, _, tokenSignatureSecret))(req));
+            _.isError(token)
+                ? next(new Error('Invalid token!'))
+                : sendRpc('request_account_details', { account_id: _.get(token, 'account_id') })
+                    .then((account) => {
+                        req["account"] = account;
+                        next(null);
+                    }, next);
+        });
 
         app.param('account_id', (req, res, next, account_id) => {
             assert(/^(\{{0,1}([0-9a-fA-F]){8}-([0-9a-fA-F]){4}-([0-9a-fA-F]){4}-([0-9a-fA-F]){4}-([0-9a-fA-F]){12}\}{0,1})$/.test(account_id), 'Invalid account id');
@@ -84,7 +95,7 @@ module.exports = class extends EventEmitter {
                 .onError(next);
         });
 
-        app.get('/api/account/:account_id/transaction', requireValidatedAccount, (req, res, next)=> {
+        app.get('/api/account/transaction', requireValidatedAccount, (req, res, next)=> {
             let account = _.get(req, 'account');
             kefir
                 .combine(["request_account_transaction", "request_account_balance"].map((eventName)=> kefir.fromPromise(sendRpc(eventName, { account_id: account["id"] }))))
@@ -93,7 +104,7 @@ module.exports = class extends EventEmitter {
                 .onError(next);
         });
 
-        app.post('/api/account/:account_id/send_message', requireValidatedAccount, (req, res, next)=> {
+        app.post('/api/account/send_message', requireValidatedAccount, (req, res, next)=> {
             const
                 account = _.get(req, 'account'),
                 [message, phone] = _.at(req.body, 'message', 'phone');
@@ -105,12 +116,12 @@ module.exports = class extends EventEmitter {
                 .then(res.status(200).json.bind(res), next);
         });
 
-        app.post('/api/account/:account_id/validate', (req, res, next) => {
+        app.post('/api/account/validate', (req, res, next) => {
             sendRpc('request_account_validation', { ip: req.ip, account_id: _.get(req, 'account.id') })
                 .then(() => res.status(200).json({}), next);
         });
 
-        app.post('/api/account/:account_id/validate_check', (req, res, next) => {
+        app.post('/api/account/validate_check', (req, res, next) => {
             sendRpc('request_account_validation_check', {
                 code: _.get(req, 'body.code'),
                 account_id: _.get(req, 'account.id')
@@ -118,7 +129,7 @@ module.exports = class extends EventEmitter {
             .then(() => res.status(200).json({}), next);
         });
 
-        app.get('/api/account/:account_id', (req, res)=> {
+        app.get('/api/account', (req, res)=> {
             res.json(_.get(req, 'account'));
         });
 
